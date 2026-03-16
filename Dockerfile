@@ -23,6 +23,7 @@ WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/index.js ./index.js
+COPY --from=builder /app/cli.js ./cli.js
 
 EXPOSE 3011
 

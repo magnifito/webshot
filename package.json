@@ -1,19 +1,40 @@
 {
-  "name": "@puralex/webshot",
+  "name": "@magnifito/webshot",
   "version": "1.0.0",
+  "description": "High-efficiency batch screenshot tool with full-page stitching support.",
   "main": "index.js",
   "bin": {
     "webshot": "./cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magnifito/webshot.git"
+  },
+  "files": [
+    "index.js",
+    "cli.js",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "node --test test.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "screenshot",
+    "puppeteer",
+    "webshot",
+    "batch",
+    "headless",
+    "chrome"
+  ],
+  "author": "Kiril Kirov <kiril@forkpoint.com>",
   "license": "ISC",
-  "description": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.2.1",

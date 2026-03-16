@@ -18,6 +18,8 @@ Options:
   -p, --port <port>         Port for --serve mode (default: 3011)
   -h, --help                Show this help
 
+Note: URLs are processed in batches of 5. Screenshots are named based on the full URL path to ensure uniqueness.
+
 Examples:
   webshot https://example.com
   webshot https://example.com https://google.com -o ./out
@@ -39,7 +41,8 @@ const hasFlag = (flags) => flags.some((f) => args.includes(f))
 const filenameFromUrl = (url) => {
   try {
     const u = new URL(url)
-    return u.hostname.replace(/[^a-zA-Z0-9.-]/g, "_")
+    const name = (u.hostname + u.pathname).replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "")
+    return name || "screenshot"
   } catch {
     return "screenshot"
   }
@@ -96,17 +99,25 @@ const run = async () => {
   console.log(`Capturing ${urls.length} URL(s) at ${width}px...\n`)
 
   let failed = 0
-  for (const url of urls) {
-    const filename = `${filenameFromUrl(url)}_${width}.png`
-    const outPath = path.resolve(outputDir, filename)
-    try {
-      const buf = await takeScreenshot({ url, width })
-      fs.writeFileSync(outPath, buf)
-      console.log(`Saved: ${outPath}\n`)
-    } catch (err) {
-      console.error(`Failed: ${url} — ${err.message}\n`)
-      failed++
-    }
+  const BATCH_SIZE = 5
+
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const chunk = urls.slice(i, i + BATCH_SIZE)
+    console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)}...`)
+    
+    await Promise.all(chunk.map(async (url) => {
+      const filename = `${filenameFromUrl(url)}_${width}.png`
+      const outPath = path.resolve(outputDir, filename)
+      try {
+        const buf = await takeScreenshot({ url, width })
+        fs.writeFileSync(outPath, buf)
+        console.log(`Saved: ${outPath}`)
+      } catch (err) {
+        console.error(`Failed: ${url} — ${err.message}`)
+        failed++
+      }
+    }))
+    console.log("") // Add newline after batch
   }
 
   console.log(`Done: ${urls.length - failed}/${urls.length} succeeded`)
