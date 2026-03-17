@@ -7,6 +7,16 @@ A lightning-fast, production-ready batch screenshot tool built with Node.js, Pup
 
 ---
 
+## 🚀 Quick Start (No Install)
+
+Run Webshot immediately without local installation using `npx`:
+
+```bash
+npx @magnifito/webshot https://acme.com
+```
+
+---
+
 ## 🚀 Features
 
 - **⚡ Parallel Processing**: Concurrently processes URLs in batches of 5, dramatically reducing capture time for large lists.
@@ -19,13 +29,16 @@ A lightning-fast, production-ready batch screenshot tool built with Node.js, Pup
 
 ---
 
-## 🔧 Installation
+Install globally to use the `magnifito-webshot` command anywhere:
 
 ```bash
-pnpm install
+npm install -g @magnifito/webshot
 # or
-npm install
+pnpm add -g @magnifito/webshot
 ```
+
+> [!NOTE]
+> The command is named `magnifito-webshot` to avoid collisions with the legacy `webshot-cli` package.
 
 ---
 
@@ -33,20 +46,20 @@ npm install
 
 ### CLI Examples
 
-Pass URLs directly or use a structured file list:
+Once installed, use the `magnifito-webshot` command:
 
 ```bash
 # Basic capture
-node cli.js https://acme.com
+magnifito-webshot https://acme.com
 
 # Batch capture from file (processed in parallel batches of 5)
-node cli.js -f urls.txt
+magnifito-webshot -f urls.txt
 
 # Specify custom output directory and responsive breakpoint
-node cli.js https://acme.com -o ./dist -b lg
+magnifito-webshot https://acme.com -o ./dist -b lg
 
 # Use custom pixel width (overrides breakpoints)
-node cli.js https://acme.com -w 1440
+magnifito-webshot https://acme.com -w 1440
 ```
 
 #### CLI Options Reference
@@ -67,7 +80,7 @@ node cli.js https://acme.com -w 1440
 Run Webshot as a background microservice:
 
 ```bash
-node cli.js --serve -p 3011
+magnifito-webshot --serve -p 3011
 ```
 
 #### API Endpoint: `GET /screenshot`
@@ -134,17 +147,24 @@ graph TD
 
 ## 🛠️ Development
 
+### Local Installation
+```bash
+git clone https://github.com/magnifito/webshot.git
+cd webshot
+npm install
+```
+
 ### Running Tests
-The project uses the built-in Node.js test runner:
 ```bash
 npm test
 ```
 
-### Local Development
-To run the server with auto-reload:
+### Local Development (Auto-reload)
 ```bash
 npm run dev
 ```
+
+---
 
 ## 🤝 Contributing
 
@@ -153,6 +173,8 @@ npm run dev
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
 4. Push to the branch (`git push origin feature/AmazingFeature`).
 5. Open a Pull Request.
+
+---
 
 ## 📄 License
 
