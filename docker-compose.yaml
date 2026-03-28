@@ -1,9 +1,0 @@
-services:
-  puppeteer-in-docker:
-    build: .
-    ports:
-      - "3011:3011"
-    environment:
-      NODE_ENV: "production"
-      CHROMIUM_PATH: "/usr/bin/chromium"
-      PORT: "3011"

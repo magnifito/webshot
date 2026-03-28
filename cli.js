@@ -2,29 +2,31 @@
 
 const fs = require("fs")
 const path = require("path")
-const { takeScreenshot, BREAKPOINTS } = require("./index")
+const { capturePage, launchBrowser, BREAKPOINTS } = require("./index")
 
 const args = process.argv.slice(2)
 
 if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-  console.log(`Usage: webshot <url...> [options]
+  console.log(`Usage: magnifito-webshot <url...> [options]
 
 Options:
-  -f, --file <path>         File with URLs (one per line)
-  -o, --output <dir>        Output directory (default: ./screenshots)
-  -b, --breakpoint <name>   Breakpoint: sm, md, lg, xl, 2xl (default: full 1920px)
-  -w, --width <pixels>      Custom width in pixels (overrides breakpoint)
-      --serve                Start the HTTP server instead
-  -p, --port <port>         Port for --serve mode (default: 3011)
-  -h, --help                Show this help
-
-Note: URLs are processed in batches of 5. Screenshots are named based on the full URL path to ensure uniqueness.
+  -f, --file <path>           File with URLs (one per line)
+  -o, --output <dir>          Output directory (default: ./screenshots)
+  -b, --breakpoint <name>     Breakpoint: sm, md, lg, xl, 2xl (default: full 1920px)
+  -w, --width <pixels>        Custom width in pixels (overrides breakpoint)
+  -F, --format <type>         Output format: png, jpg, webp (default: png)
+  -q, --quality <1-100>       Quality for jpg/webp (default: browser default)
+  -d, --delay <ms>            Wait time in ms after scrolling (default: 0)
+  -c, --concurrency <n>       URLs to process in parallel (default: 5)
+      --no-scroll             Skip auto-scrolling
+  -h, --help                  Show this help
 
 Examples:
-  webshot https://example.com
-  webshot https://example.com https://google.com -o ./out
-  webshot -f urls.txt -b lg
-  webshot --serve -p 8080`)
+  magnifito-webshot https://example.com
+  magnifito-webshot https://example.com https://google.com -o ./out
+  magnifito-webshot -f urls.txt -b lg
+  magnifito-webshot https://example.com -F webp -q 90
+  magnifito-webshot https://example.com --no-scroll -d 2000`)
   process.exit(0)
 }
 
@@ -35,8 +37,6 @@ const getArg = (flags) => {
   }
   return null
 }
-
-const hasFlag = (flags) => flags.some((f) => args.includes(f))
 
 const filenameFromUrl = (url) => {
   try {
@@ -49,16 +49,6 @@ const filenameFromUrl = (url) => {
 }
 
 const run = async () => {
-  if (hasFlag(["--serve"])) {
-    const port = getArg(["-p", "--port"]) || process.env.PORT || 3011
-    const { app } = require("./index")
-    app.listen(port, () => {
-      console.log(`Screenshot server listening on port ${port}`)
-    })
-    return
-  }
-
-  // Collect URLs from args and/or file
   const urls = args.filter((a) => !a.startsWith("-") && (a.startsWith("http://") || a.startsWith("https://")))
 
   const file = getArg(["-f", "--file"])
@@ -76,6 +66,35 @@ const run = async () => {
   const outputDir = getArg(["-o", "--output"]) || "./screenshots"
   const breakpoint = getArg(["-b", "--breakpoint"])
   const customWidth = getArg(["-w", "--width"])
+  const format = getArg(["-F", "--format"]) || "png"
+  const qualityArg = getArg(["-q", "--quality"])
+  const delayArg = getArg(["-d", "--delay"])
+  const concurrencyArg = getArg(["-c", "--concurrency"])
+  const scroll = !args.includes("--no-scroll")
+
+  const validFormats = ["png", "jpg", "jpeg", "webp"]
+  if (!validFormats.includes(format)) {
+    console.error(`Error: Unknown format "${format}". Use: png, jpg, webp`)
+    process.exit(1)
+  }
+
+  const quality = qualityArg ? parseInt(qualityArg, 10) : undefined
+  if (quality !== undefined && (isNaN(quality) || quality < 1 || quality > 100)) {
+    console.error("Error: --quality must be between 1 and 100")
+    process.exit(1)
+  }
+
+  const delay = delayArg ? parseInt(delayArg, 10) : 0
+  if (isNaN(delay) || delay < 0) {
+    console.error("Error: --delay must be a non-negative number")
+    process.exit(1)
+  }
+
+  const concurrency = concurrencyArg ? parseInt(concurrencyArg, 10) : 5
+  if (isNaN(concurrency) || concurrency < 1) {
+    console.error("Error: --concurrency must be a positive number")
+    process.exit(1)
+  }
 
   let width = 1920
   if (customWidth) {
@@ -96,28 +115,36 @@ const run = async () => {
     fs.mkdirSync(outputDir, { recursive: true })
   }
 
-  console.log(`Capturing ${urls.length} URL(s) at ${width}px...\n`)
+  const ext = format === "jpeg" ? "jpg" : format
+  console.log(`Capturing ${urls.length} URL(s) at ${width}px (${format})...\n`)
 
+  const browser = await launchBrowser()
   let failed = 0
-  const BATCH_SIZE = 5
 
-  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-    const chunk = urls.slice(i, i + BATCH_SIZE)
-    console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)}...`)
-    
-    await Promise.all(chunk.map(async (url) => {
-      const filename = `${filenameFromUrl(url)}_${width}.png`
-      const outPath = path.resolve(outputDir, filename)
-      try {
-        const buf = await takeScreenshot({ url, width })
-        fs.writeFileSync(outPath, buf)
-        console.log(`Saved: ${outPath}`)
-      } catch (err) {
-        console.error(`Failed: ${url} — ${err.message}`)
-        failed++
-      }
-    }))
-    console.log("") // Add newline after batch
+  try {
+    for (let i = 0; i < urls.length; i += concurrency) {
+      const chunk = urls.slice(i, i + concurrency)
+      console.log(`Processing batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)}...`)
+
+      await Promise.all(chunk.map(async (url) => {
+        const filename = `${filenameFromUrl(url)}_${width}.${ext}`
+        const outPath = path.resolve(outputDir, filename)
+        const page = await browser.newPage()
+        try {
+          const buf = await capturePage(page, { url, width, format, quality, delay, scroll })
+          fs.writeFileSync(outPath, buf)
+          console.log(`Saved: ${outPath}`)
+        } catch (err) {
+          console.error(`Failed: ${url} — ${err.message}`)
+          failed++
+        } finally {
+          await page.close()
+        }
+      }))
+      console.log("")
+    }
+  } finally {
+    await browser.close()
   }
 
   console.log(`Done: ${urls.length - failed}/${urls.length} succeeded`)

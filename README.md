@@ -2,7 +2,7 @@
 
 A lightning-fast, production-ready batch screenshot tool built with Node.js, Puppeteer, and Sharp. Designed for high-performance web archiving and automated testing.
 
-[![NPM Version](https://img.shields.io/npm/v/@magnifito/webshot.svg)](https://www.npmjs.com/package/@magnifito/webshot)
+[![NPM Version](https://img.shields.io/npm/v/@puralex/webshot.svg)](https://www.npmjs.com/package/@puralex/webshot)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
 ---
@@ -12,7 +12,7 @@ A lightning-fast, production-ready batch screenshot tool built with Node.js, Pup
 Run Webshot immediately without local installation using `npx`:
 
 ```bash
-npx @magnifito/webshot https://acme.com
+npx @puralex/webshot https://acme.com
 ```
 
 ---
@@ -32,9 +32,9 @@ npx @magnifito/webshot https://acme.com
 Install globally to use the `magnifito-webshot` command anywhere:
 
 ```bash
-npm install -g @magnifito/webshot
+npm install -g @puralex/webshot
 # or
-pnpm add -g @magnifito/webshot
+pnpm add -g @puralex/webshot
 ```
 
 > [!NOTE]
