@@ -11,22 +11,94 @@ const BREAKPOINTS = {
 
 const MAX_TEXTURE_HEIGHT = 16384
 
+const removeOverlays = async (page) => {
+  await page.evaluate(() => {
+    const selectors = [
+      '[id*="cookie"]', '[class*="cookie"]',
+      '[id*="consent"]', '[class*="consent"]',
+      '[id*="gdpr"]', '[class*="gdpr"]',
+      '[id*="privacy"]', '[class*="privacy"]',
+      '[class*="banner"]', '[id*="banner"]',
+      '[class*="modal"]', '[id*="modal"]',
+      '[class*="overlay"]', '[id*="overlay"]',
+      '[class*="popup"]', '[id*="popup"]',
+    ]
+    selectors.forEach((selector) => {
+      try {
+        const elements = document.querySelectorAll(selector)
+        elements.forEach((el) => {
+          const style = window.getComputedStyle(el)
+          if (style.position === "fixed" || style.position === "absolute" || parseInt(style.zIndex, 10) > 100) {
+            el.style.display = "none"
+            el.style.opacity = "0"
+            el.style.pointerEvents = "none"
+          }
+        })
+      } catch (e) {
+        // Ignore selector errors
+      }
+    })
+    // Also try to find common "Accept" buttons and click them if they are small/likely
+    // But hiding is safer for screenshots.
+  })
+}
+
+const fixStickyElements = async (page) => {
+  await page.evaluate(() => {
+    const elements = document.querySelectorAll("*")
+    elements.forEach((el) => {
+      const style = window.getComputedStyle(el)
+      if (style.position === "fixed" || style.position === "sticky") {
+        el.style.position = "absolute"
+      }
+    })
+  })
+}
+
+const waitForImages = async (page) => {
+  await page.evaluate(async () => {
+    const selectors = Array.from(document.querySelectorAll("img"))
+    const timeout = 15000 // 15 seconds max wait for images
+    await Promise.all(
+      selectors.map((img) => {
+        if (img.complete) return Promise.resolve()
+        return new Promise((resolve) => {
+          const timer = setTimeout(resolve, timeout)
+          img.addEventListener("load", () => {
+            clearTimeout(timer)
+            resolve()
+          })
+          img.addEventListener("error", () => {
+            clearTimeout(timer)
+            resolve()
+          })
+        })
+      })
+    )
+  })
+}
+
 const autoScroll = async (page) => {
   await page.evaluate(async () => {
     await new Promise(async (resolve) => {
-      const distance = 100
-      while (true) {
-        const oldScrollHeight = document.body.scrollHeight
+      let totalHeight = 0
+      const distance = 150 // Slightly larger steps for faster triggering
+      const timer = setInterval(() => {
+        const { scrollHeight } = document.body
         window.scrollBy(0, distance)
-        await new Promise((r) => setTimeout(r, 100))
-        if (window.innerHeight + window.scrollY >= document.body.scrollHeight) {
-          await new Promise((r) => setTimeout(r, 2000))
-          if (document.body.scrollHeight <= oldScrollHeight) break
+        totalHeight += distance
+
+        if (totalHeight >= scrollHeight) {
+          clearInterval(timer)
+          resolve()
         }
-      }
-      resolve()
+      }, 150) // More time between scrolls for JS to react
     })
   })
+  // Scroll back to top to handle sticky headers correctly when we fix them
+  await page.evaluate(() => window.scrollTo(0, 0))
+  // Wait for the final layout to settle after scrolling back
+  await new Promise((r) => setTimeout(r, 2000))
 }
 
 const formatImage = async (buffer, { format = "png", quality }) => {
@@ -49,10 +121,29 @@ const capturePage = async (page, options = {}) => {
 
   console.log(`📸 Capturing: ${url} | Width: ${width}px`)
   await page.setViewport({ width, height: 1080 })
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 })
+  await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 })
 
-  if (scroll) await autoScroll(page)
+  // First pass: Hide obvious overlays before scrolling
+  await removeOverlays(page)
+
+  if (scroll) {
+    await autoScroll(page)
+    // Wait for any final assets triggered by scrolling
+    try {
+      await page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {})
+    } catch (e) {}
+  }
+
+  // Second pass: Hide any overlays that appeared during scroll
+  await removeOverlays(page)
+
+  // Ensure all images (including lazy-loaded ones) are ready
+  await waitForImages(page)
+
   if (delay > 0) await new Promise((r) => setTimeout(r, delay))
+
+  // Fix sticky elements after scrolling so they stay at the top and don't repeat
+  await fixStickyElements(page)
 
   const pageHeight = await page.evaluate(() => document.body.scrollHeight)
   console.log(`📏 Page height: ${pageHeight}px`)
@@ -94,10 +185,12 @@ const capturePage = async (page, options = {}) => {
   return formatImage(rawBuffer, { format, quality })
 }
 
+
 const launchBrowser = async () => {
   return puppeteer.launch({
     headless: "new",
     defaultViewport: null,
+    protocolTimeout: 120000,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
 }

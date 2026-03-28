@@ -41,7 +41,8 @@ const getArg = (flags) => {
 const filenameFromUrl = (url) => {
   try {
     const u = new URL(url)
-    const name = (u.hostname + u.pathname).replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "")
+    const decoded = decodeURIComponent(u.hostname + u.pathname)
+    const name = decoded.replace(/[<>:"/\\|?*]/g, "_").replace(/^_+|_+$/g, "")
     return name || "screenshot"
   } catch {
     return "screenshot"
