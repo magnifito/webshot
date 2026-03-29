@@ -55,27 +55,39 @@ const fixStickyElements = async (page) => {
   })
 }
 
-const waitForImages = async (page) => {
-  await page.evaluate(async () => {
-    const selectors = Array.from(document.querySelectorAll("img"))
-    const timeout = 15000 // 15 seconds max wait for images
+const waitForImages = async (page, timeout = 30000) => {
+  await page.evaluate(async (imgTimeout) => {
+    const images = Array.from(document.querySelectorAll("img"))
+    
+    const isImageCached = (img) => img.complete && img.naturalWidth !== 0
+
     await Promise.all(
-      selectors.map((img) => {
-        if (img.complete) return Promise.resolve()
+      images.map((img) => {
+        if (isImageCached(img)) return Promise.resolve()
+        
         return new Promise((resolve) => {
-          const timer = setTimeout(resolve, timeout)
-          img.addEventListener("load", () => {
+          const timer = setTimeout(resolve, imgTimeout)
+          
+          const onDone = () => {
             clearTimeout(timer)
             resolve()
-          })
-          img.addEventListener("error", () => {
-            clearTimeout(timer)
-            resolve()
-          })
+          }
+
+          if (img.complete) {
+            // Already complete but naturalWidth is 0? Give it a tiny bit more
+            // or resolve if it's truly a broken image.
+            onDone()
+          } else {
+            img.addEventListener("load", onDone, { once: true })
+            img.addEventListener("error", onDone, { once: true })
+          }
         })
       })
     )
-  })
+    
+    // Final check for dynamic content/rendering settle
+    await new Promise((r) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 500))
+  }, timeout)
 }
 
 const autoScroll = async (page) => {
@@ -115,13 +127,13 @@ const formatImage = async (buffer, { format = "png", quality }) => {
 }
 
 const capturePage = async (page, options = {}) => {
-  const { url, width = 1920, format = "png", quality, delay = 0, scroll = true } = options
+  const { url, width = 1920, format = "png", quality, delay = 0, scroll = true, waitUntil = "networkidle2" } = options
 
   if (!url) throw new Error("No URL provided")
 
   console.log(`📸 Capturing: ${url} | Width: ${width}px`)
   await page.setViewport({ width, height: 1080 })
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 })
+  await page.goto(url, { waitUntil, timeout: 60000 })
 
   // First pass: Hide obvious overlays before scrolling
   await removeOverlays(page)
@@ -130,7 +142,7 @@ const capturePage = async (page, options = {}) => {
     await autoScroll(page)
     // Wait for any final assets triggered by scrolling
     try {
-      await page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {})
+      await page.waitForNetworkIdle({ timeout: 5000, idleTime: 1000 }).catch(() => {})
     } catch (e) {}
   }
 
@@ -138,7 +150,9 @@ const capturePage = async (page, options = {}) => {
   await removeOverlays(page)
 
   // Ensure all images (including lazy-loaded ones) are ready
-  await waitForImages(page)
+  // We do this BEFORE potentially scrolling back to top for stitching or full-page
+  const { imageTimeout = 30000 } = options
+  await waitForImages(page, imageTimeout)
 
   if (delay > 0) await new Promise((r) => setTimeout(r, delay))
 
@@ -158,6 +172,12 @@ const capturePage = async (page, options = {}) => {
     let y = 0
     while (y < pageHeight) {
       const tileHeight = Math.min(MAX_TEXTURE_HEIGHT, pageHeight - y)
+      
+      // Crucial: Scroll to the tile to ensure lazy-loaded content in that specific area is rendered
+      await page.evaluate((scrollToY) => window.scrollTo(0, scrollToY), y)
+      // Allow a brief moment for the browser to register the new viewpoint
+      await new Promise((r) => setTimeout(r, 500))
+
       const tile = await page.screenshot({
         type: "png",
         clip: { x: 0, y, width, height: tileHeight },
@@ -180,6 +200,8 @@ const capturePage = async (page, options = {}) => {
       .toBuffer()
 
     console.log(`✅ Stitched ${tiles.length} tiles into ${pageHeight}px image`)
+    // Optional: Scroll back to top after we're done
+    await page.evaluate(() => window.scrollTo(0, 0))
   }
 
   return formatImage(rawBuffer, { format, quality })

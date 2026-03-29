@@ -17,15 +17,18 @@ Options:
   -F, --format <type>         Output format: png, jpg, webp (default: png)
   -q, --quality <1-100>       Quality for jpg/webp (default: browser default)
   -d, --delay <ms>            Wait time in ms after scrolling (default: 0)
-  -c, --concurrency <n>       URLs to process in parallel (default: 5)
+  -i, --image-timeout <ms>    Wait time in ms for images to load (default: 30000)
+  -c, --concurrency <n>       URLs to process in parallel (default: 3)
+      --wait-until <type>     Wait condition: networkidle0, networkidle2 (default: networkidle2)
+      --batch-delay <ms>      Wait time between batches (default: 0)
       --no-scroll             Skip auto-scrolling
   -h, --help                  Show this help
 
 Examples:
   magnifito-webshot https://example.com
   magnifito-webshot https://example.com https://google.com -o ./out
-  magnifito-webshot -f urls.txt -b lg
-  magnifito-webshot https://example.com -F webp -q 90
+  magnifito-webshot -f urls.txt -b lg -c 2
+  magnifito-webshot https://example.com --wait-until networkidle0
   magnifito-webshot https://example.com --no-scroll -d 2000`)
   process.exit(0)
 }
@@ -70,7 +73,10 @@ const run = async () => {
   const format = getArg(["-F", "--format"]) || "png"
   const qualityArg = getArg(["-q", "--quality"])
   const delayArg = getArg(["-d", "--delay"])
+  const imageTimeoutArg = getArg(["-i", "--image-timeout"])
   const concurrencyArg = getArg(["-c", "--concurrency"])
+  const waitUntil = getArg(["--wait-until"]) || "networkidle2"
+  const batchDelayArg = getArg(["--batch-delay"])
   const scroll = !args.includes("--no-scroll")
 
   const validFormats = ["png", "jpg", "jpeg", "webp"]
@@ -91,9 +97,26 @@ const run = async () => {
     process.exit(1)
   }
 
-  const concurrency = concurrencyArg ? parseInt(concurrencyArg, 10) : 5
+  const imageTimeout = imageTimeoutArg ? parseInt(imageTimeoutArg, 10) : 30000
+  if (isNaN(imageTimeout) || imageTimeout < 0) {
+    console.error("Error: --image-timeout must be a non-negative number")
+    process.exit(1)
+  }
+
+  const concurrency = concurrencyArg ? parseInt(concurrencyArg, 10) : 3
   if (isNaN(concurrency) || concurrency < 1) {
     console.error("Error: --concurrency must be a positive number")
+    process.exit(1)
+  }
+
+  const batchDelay = batchDelayArg ? parseInt(batchDelayArg, 10) : 0
+  if (isNaN(batchDelay) || batchDelay < 0) {
+    console.error("Error: --batch-delay must be a non-negative number")
+    process.exit(1)
+  }
+
+  if (waitUntil !== "networkidle0" && waitUntil !== "networkidle2") {
+    console.error("Error: --wait-until must be either networkidle0 or networkidle2")
     process.exit(1)
   }
 
@@ -132,7 +155,7 @@ const run = async () => {
         const outPath = path.resolve(outputDir, filename)
         const page = await browser.newPage()
         try {
-          const buf = await capturePage(page, { url, width, format, quality, delay, scroll })
+          const buf = await capturePage(page, { url, width, format, quality, delay, scroll, waitUntil, imageTimeout })
           fs.writeFileSync(outPath, buf)
           console.log(`Saved: ${outPath}`)
         } catch (err) {
@@ -142,6 +165,11 @@ const run = async () => {
           await page.close()
         }
       }))
+      
+      if (batchDelay > 0 && i + concurrency < urls.length) {
+        console.log(`Waiting ${batchDelay}ms before next batch...`)
+        await new Promise((r) => setTimeout(r, batchDelay))
+      }
       console.log("")
     }
   } finally {
