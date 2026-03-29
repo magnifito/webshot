@@ -20,12 +20,12 @@ npx @puralex/webshot https://acme.com
 ## 🚀 Features
 
 - **⚡ Parallel Processing**: Concurrently processes URLs in batches of 5, dramatically reducing capture time for large lists.
-- **🔗 Unique Filenames**: Advanced naming logic based on full URL paths (e.g., `hostname_path_width.png`) to prevent collisions and overwrites.
+- **🔗 Unicode Filenames**: Advanced naming logic that correctly decodes percent-encoded URLs and preserves non-Latin (Cyrillic, etc.) characters in filenames.
 - **🏗️ Full-Page Stitching**: Intelligently captures extremely tall pages (up to 16,384px) by tiling and stitching captures with Sharp to avoid GPU memory limits.
-- **📜 Smart Autoscroll**: Simulates human behavior to trigger lazy-loaded images and dynamic content before capture.
+- **🛡️ Smart Overlay Removal**: Automatically identifies and hides cookie banners, GDPR consents, and popups to ensure a clean capture.
+- **📌 Sticky Header Handling**: Fixes `position: fixed` and `sticky` headers so they appear only once at the top of the image instead of repeating across tiles.
+- **📜 Enhanced Lazy Loading**: Deliberate autoscroll logic and `waitForImages` utility ensure all lazy-loaded assets are fully rendered before capture.
 - **📱 Responsive Breakpoints**: Built-in support for standard Tailwind/Bootstrap breakpoints or custom pixel-perfect widths.
-- **🐳 Docker Native**: Ready-to-use Docker environment with pre-configured Chromium and dependencies.
-- **🌐 Dual Mode**: Use it as a powerful CLI tool or a lightweight microservice via its Express API.
 
 ---
 
@@ -70,78 +70,43 @@ magnifito-webshot https://acme.com -w 1440
 | `--output` | `-o` | Target directory for saved images | `./screenshots` |
 | `--breakpoint` | `-b` | `sm`, `md`, `lg`, `xl`, `2xl` | `1920px` |
 | `--width` | `-w` | Custom width in pixels | - |
-| `--serve` | - | Starts the tool in HTTP Server Mode | - |
-| `--port` | `-p` | Specific port for Server Mode | `3011` |
-
----
-
-### 🌐 Server Mode (API)
-
-Run Webshot as a background microservice:
-
-```bash
-magnifito-webshot --serve -p 3011
-```
-
-#### API Endpoint: `GET /screenshot`
-
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `url` | String | Yes | The target URL to capture |
-| `breakpoint` | String | No | Target breakpoint name |
-
-**Success Response (JSON):**
-```json
-{
-  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUh..."
-}
-```
-
----
-
-## 🐳 Docker Integration
-
-Docker provides the most stable environment for Puppeteer, especially on CI/CD pipelines.
-
-### Docker Compose
-```bash
-docker-compose up -d --build
-```
-
-### Direct CLI via Docker
-```bash
-docker-compose run puppeteer-in-docker node cli.js https://acme.com
-```
+| `--format` | `-F` | Output format: `png`, `jpg`, `webp` | `png` |
+| `--quality` | `-q` | Quality for `jpg`/`webp` (1-100) | - |
+| `--delay` | `-d` | Wait time in ms after scrolling | `0` |
+| `--no-scroll` | - | Skip auto-scrolling | - |
 
 ---
 
 ## 🏗️ Architecture & Technical Details
 
-Webshot is split into two primary layers:
+Webshot uses a multi-stage capture pipeline to ensure high-fidelity results:
 
 ```mermaid
 graph TD
-    A[User/CLI Output] --> B[cli.js]
-    A --> C[Server API]
+    A[User/CLI Input] --> B[cli.js]
     B --> D[index.js Core Engine]
-    C --> D
     D --> E[Puppeteer / Chromium]
-    E --> F[Smart Autoscroll]
-    F --> G[Tiled Capture]
-    G --> H[Sharp Stitching]
-    H --> I[Final PNG]
+    E --> F[removeOverlays]
+    F --> G[Smart Autoscroll]
+    G --> H[waitForImages]
+    H --> I[fixStickyElements]
+    I --> J[Tiled Capture]
+    J --> K[Sharp Stitching]
+    K --> L[Final Image]
 ```
 
-- **Smart Autoscroll**: To handle modern web apps, the core engine performs an incremental scroll-and-wait routine, ensuring all lazy-loaded assets are rendered.
-- **Hybrid Capture**: For pages within the Chromium viewport limit, a single full-page capture is taken. For "infinite scrollers" or very long articles, the system captures tiles and merges them into a single high-resolution PNG using Sharp.
+- **Smart Autoscroll**: Performs an incremental scroll-and-wait routine to trigger lazy-loaded assets.
+- **Layout Stabilization**: Automatically hides modals/banners and converts sticky elements to absolute positioning to prevent duplication in full-page images.
+- **Hybrid Capture**: Uses a single full-page capture for normal pages and a tiled stitching approach for "infinite scrollers" or very long articles.
 
 ---
 
 ## ❓ Troubleshooting
 
-- **Puppeteer Dependency Errors**: If running locally on Linux, you may need to install specific system libraries (libnss3, libatk, etc.). Using **Docker** is the recommended fix.
+- **Puppeteer Dependency Errors**: If running on Linux, you may need to install specific system libraries (libnss3, libatk, etc.).
 - **Memory Limits**: Extremely long pages might use significant RAM during stitching. If crashes occur, try reducing the `MAX_TEXTURE_HEIGHT` in `index.js`.
-- **Navigation Timeout**: For slow websites, you can increase the `timeout` setting in the `takeScreenshot` function within `index.js`.
+- **Navigation Timeout**: For slow websites, increased browser protocol timeouts are pre-configured to 2 minutes.
+
 
 ---
 
